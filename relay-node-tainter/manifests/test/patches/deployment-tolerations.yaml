@@ -1,0 +1,10 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: relay-node-tainter-controller
+spec:
+  template:
+    spec:
+      tolerations:
+      - effect: NoSchedule
+        operator: Exists

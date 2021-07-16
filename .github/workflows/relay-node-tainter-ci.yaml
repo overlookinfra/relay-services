@@ -1,0 +1,220 @@
+name: Node Tainter CI
+on:
+  push:
+    paths:
+    - relay-node-tainter/**
+  pull_request:
+    paths:
+    - relay-node-tainter/**
+defaults:
+  run:
+    working-directory: relay-node-tainter
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/setup-go@v2
+      with:
+        go-version: '1.16'
+    - uses: actions/checkout@v2
+    - uses: actions/cache@v2
+      with:
+        path: |
+          ~/go/pkg/mod
+          ~/go/pkg/sumdb
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+    - name: Check
+      run: make check
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/setup-go@v2
+      with:
+        go-version: '1.16'
+    - uses: actions/checkout@v2
+    - uses: actions/cache@v2
+      with:
+        path: |
+          ~/go/pkg/mod
+          ~/go/pkg/sumdb
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+    - name: Install ko
+      run: |
+        curl -L https://github.com/google/ko/releases/download/v0.8.3/ko_0.8.3_Linux_x86_64.tar.gz \
+          | sudo tar -xzf - -C /bin ko
+    - name: Build
+      run: make
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        k3s-image:
+        - 'rancher/k3s:v1.21.1-k3s1'
+        - 'rancher/k3s:v1.20.7-k3s1'
+        - 'rancher/k3s:v1.19.11-k3s1'
+        - 'rancher/k3s:v1.18.19-k3s1'
+    env:
+      KUBECONFIG: /tmp/kubeconfig
+    steps:
+    - uses: actions/setup-go@v2
+      with:
+        go-version: '1.16'
+    - uses: actions/checkout@v2
+    - uses: actions/cache@v2
+      with:
+        path: |
+          ~/go/pkg/mod
+          ~/go/pkg/sumdb
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+    - name: Install ko
+      run: |
+        curl -L https://github.com/google/ko/releases/download/v0.8.3/ko_0.8.3_Linux_x86_64.tar.gz \
+          | sudo tar -xzf - -C /bin ko
+    - name: Install k3d
+      run: curl -s https://raw.githubusercontent.com/rancher/k3d/main/install.sh | bash
+    - name: Set up Docker registry
+      run: k3d registry create registry.localhost --port 5000
+    - id: set-up-kubernetes-cluster
+      name: Set up Kubernetes cluster
+      run: |
+        k3d cluster create relay-node-tainter-test \
+          --image ${{ matrix.k3s-image }} \
+          --registry-use k3d-registry.localhost:5000
+    - name: Review Docker containers
+      if: always()
+      run: docker ps -a
+    - name: Review Docker logs for k3d
+      if: steps.set-up-kubernetes-cluster.outcome == 'success'
+      run: |
+        k3d node list --output json \
+          | jq -r '.[] | select(.Labels["k3d.cluster"] == "relay-node-tainter-test") | .name' \
+          | xargs -n 1 docker logs
+    - id: test
+      name: Test
+      env:
+        KO_DOCKER_REPO: k3d-registry.localhost:5000
+        RELAY_NODE_TAINTER_TEST_E2E_KUBECONFIG: ${{ env.KUBECONFIG }}
+      run: make test
+    - name: Review Kubernetes objects after test failure
+      if: steps.test.outcome == 'failure'
+      run: kubectl describe -f "$( make print-build-test-manifest-yaml )"
+    - name: Review controller logs after test failure
+      if: steps.test.outcome == 'failure'
+      run: |
+        kubectl logs -n relay-node-tainter \
+          --selector app.kubernetes.io/component=controller \
+          --prefix \
+          --tail -1
+  release:
+    needs:
+    - lint
+    - build
+    - test
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/relay-node-tainter/v')
+    steps:
+    - uses: actions/checkout@v2
+    - name: Get tag version
+      id: get-tag-version
+      uses: actions/github-script@v3
+      with:
+        result-encoding: string
+        script: |
+          return context.ref.replace(/^refs\/tags\/relay-node-tainter\/v/, '');
+    - uses: mindsers/changelog-reader-action@v2
+      id: read-changelog
+      with:
+        path: relay-node-tainter/CHANGELOG.md
+        version: ${{ steps.get-tag-version.outputs.result }}
+    - uses: actions/create-release@v1
+      id: create-release
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: Node Tainter v${{ steps.read-changelog.outputs.version }}
+        body: ${{ steps.read-changelog.outputs.changes }}
+        prerelease: ${{ steps.read-changelog.outputs.status == 'prereleased' }}
+        draft: ${{ steps.read-changelog.outputs.status == 'unreleased' }}
+    outputs:
+      upload-url: ${{ steps.create-release.outputs.upload_url }}
+  release-assets:
+    needs: release
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        manifest: [release, debug]
+    steps:
+    - name: Set up Google Cloud SDK
+      uses: google-github-actions/setup-gcloud@master
+      with:
+        project_id: puppet-relay-contrib-services
+        service_account_key: ${{ secrets.GCP_SA_KEY }}
+    - name: Authenticate to Google Cloud Registry
+      run: gcloud -q auth configure-docker
+    - uses: actions/setup-go@v2
+      with:
+        go-version: '1.16'
+    - uses: actions/checkout@v2
+    - uses: actions/cache@v2
+      with:
+        path: |
+          ~/go/pkg/mod
+          ~/go/pkg/sumdb
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+    - name: Install ko
+      run: |
+        curl -L https://github.com/google/ko/releases/download/v0.8.3/ko_0.8.3_Linux_x86_64.tar.gz \
+          | sudo tar -xzf - -C /bin ko
+    - name: Build
+      env:
+        KO_DOCKER_REPO: gcr.io/puppet-relay-contrib-services/relay-node-tainter
+      run: make build-${{ matrix.manifest }}
+    - name: Get asset information
+      id: get-asset-information
+      run: |
+        for target in manifest-checksum manifest-yaml archive; do
+          target_path="$( make "print-build-${{ matrix.manifest }}-${target}" )"
+          target_name="$( basename "${target_path}" )"
+          target_media_type="$( file -b --mime-type "${target_path}" )"
+
+          echo "::set-output name=${target}-path::${target_path}"
+          echo "::set-output name=${target}-name::${target_name}"
+          echo "::set-output name=${target}-media-type::${target_media_type}"
+        done
+    - name: Upload manifest checksum asset to GitHub release
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.release.outputs.upload-url }}
+        asset_path: ${{ steps.get-asset-information.outputs.manifest-checksum-path }}
+        asset_name: ${{ steps.get-asset-information.outputs.manifest-checksum-name }}
+        asset_content_type: ${{ steps.get-asset-information.outputs.manifest-checksum-media-type }}
+    - name: Upload manifest YAML asset to GitHub release
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.release.outputs.upload-url }}
+        asset_path: ${{ steps.get-asset-information.outputs.manifest-yaml-path }}
+        asset_name: ${{ steps.get-asset-information.outputs.manifest-yaml-name }}
+        asset_content_type: ${{ steps.get-asset-information.outputs.manifest-yaml-media-type }}
+    - name: Upload archive asset to GitHub release
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.release.outputs.upload-url }}
+        asset_path: ${{ steps.get-asset-information.outputs.archive-path }}
+        asset_name: ${{ steps.get-asset-information.outputs.archive-name }}
+        asset_content_type: ${{ steps.get-asset-information.outputs.archive-media-type }}
