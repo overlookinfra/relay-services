@@ -197,7 +197,7 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ needs.release.outputs.upload-url }}
-        asset_path: ${{ steps.get-asset-information.outputs.manifest-checksum-path }}
+        asset_path: relay-node-tainter/${{ steps.get-asset-information.outputs.manifest-checksum-path }}
         asset_name: ${{ steps.get-asset-information.outputs.manifest-checksum-name }}
         asset_content_type: ${{ steps.get-asset-information.outputs.manifest-checksum-media-type }}
     - name: Upload manifest YAML asset to GitHub release
@@ -206,7 +206,7 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ needs.release.outputs.upload-url }}
-        asset_path: ${{ steps.get-asset-information.outputs.manifest-yaml-path }}
+        asset_path: relay-node-tainter/${{ steps.get-asset-information.outputs.manifest-yaml-path }}
         asset_name: ${{ steps.get-asset-information.outputs.manifest-yaml-name }}
         asset_content_type: ${{ steps.get-asset-information.outputs.manifest-yaml-media-type }}
     - name: Upload archive asset to GitHub release
@@ -215,6 +215,6 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ needs.release.outputs.upload-url }}
-        asset_path: ${{ steps.get-asset-information.outputs.archive-path }}
+        asset_path: relay-node-tainter/${{ steps.get-asset-information.outputs.archive-path }}
         asset_name: ${{ steps.get-asset-information.outputs.archive-name }}
         asset_content_type: ${{ steps.get-asset-information.outputs.archive-media-type }}
