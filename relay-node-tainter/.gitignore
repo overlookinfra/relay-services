@@ -1,0 +1,4 @@
+/artifacts/
+/vendor/
+
+.go-version

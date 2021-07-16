@@ -1,0 +1,25 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- namespace.yaml
+- ../controller
+transformers:
+- kustomizeconfig/label-version.yaml
+namespace: relay-node-tainter
+namePrefix: default-
+commonLabels:
+  app.kubernetes.io/name: relay-node-tainter
+configMapGenerator:
+- name: relay-node-tainter-environment
+  literals:
+  - version=unknown
+generatorOptions:
+  disableNameSuffixHash: true
+vars:
+- name: RELAY_NODE_TAINTER_VERSION
+  objref:
+    apiVersion: v1
+    kind: ConfigMap
+    name: relay-node-tainter-environment
+  fieldref:
+    fieldpath: data.version

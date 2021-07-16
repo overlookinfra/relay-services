@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: relay-node-tainter-controller
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      node-tainter.services.relay.sh/selector: relay-node-tainter-controller
+  template:
+    metadata:
+      labels:
+        node-tainter.services.relay.sh/selector: relay-node-tainter-controller
+    spec:
+      serviceAccountName: relay-node-tainter-controller
+      containers:
+      - name: relay-node-tainter-controller
+        image: ko://github.com/puppetlabs/relay-services/relay-node-tainter/cmd/relay-node-tainter-controller
+        env:
+        - name: RELAY_NODE_TAINTER_DEBUG
+          valueFrom:
+            configMapKeyRef:
+              name: relay-node-tainter-controller-config
+              key: debug
+              optional: true
+        - name: RELAY_NODE_TAINTER_CONTROLLER_MAX_RECONCILE_BACKOFF_DURATION
+          valueFrom:
+            configMapKeyRef:
+              name: relay-node-tainter-controller-config
+              key: max-reconcile-backoff-duration
+              optional: true
+        - name: RELAY_NODE_TAINTER_CONTROLLER_CONDITION_TYPE_INCLUSION_PATTERN
+          valueFrom:
+            configMapKeyRef:
+              name: relay-node-tainter-controller-config
+              key: condition-type-inclusion-pattern
+              optional: true
+        - name: RELAY_NODE_TAINTER_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: "metadata.labels['app.kubernetes.io/instance']"
+        - name: RELAY_NODE_TAINTER_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: [all]
+          runAsUser: 65532
+          runAsGroup: 65532
