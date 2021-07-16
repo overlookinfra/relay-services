@@ -16,7 +16,7 @@ ZIP ?= zip
 # Variables
 #
 
-export RELAY_NODE_TAINTER_VERSION := $(or $(RELAY_NODE_TAINTER_VERSION),$(shell $(GIT) describe --tags --always --dirty))
+export RELAY_NODE_TAINTER_VERSION := $(or $(RELAY_NODE_TAINTER_VERSION),$(lastword $(subst /, ,$(shell $(GIT) describe --tags --always --dirty))))
 export RELAY_NODE_TAINTER_TEST_E2E_KUBECONFIG ?=
 
 export KO_DOCKER_REPO ?= ko.local
